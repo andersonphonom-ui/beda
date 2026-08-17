@@ -194,6 +194,7 @@ def analyze_multistep(url, session, username, timeout=5):
     except Exception as e:
         console.print(f"  [red][BEDA] Multi-step error: {e}[/red]")
         return None
+    def detect_rate_limit(response):
     """Detects if IP is being rate limited or blocked"""
 
     # Status codes
