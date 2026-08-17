@@ -4,3 +4,4 @@ rich
 urllib3
 stem
 PySocks
+playwright
