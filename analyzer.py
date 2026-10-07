@@ -92,26 +92,36 @@ def analyze_form(url, session, timeout=5):
 def detect_success(response, baseline_text, success_text=None, fail_text=None):
     """
     Detects if login was successful.
+    Requires explicit, reliable signals — avoids false positives from
+    minor page differences (timestamps, tokens, session IDs, etc).
     """
-    # Explicit success text
+    # Explicit success text — most reliable, user-provided
     if success_text and success_text.lower() in response.text.lower():
         return True
 
-    # Explicit fail text disappeared
-    if fail_text and fail_text.lower() not in response.text.lower():
-        return True
+    # Explicit fail text disappeared — reliable, user-provided
+    if fail_text:
+        return fail_text.lower() not in response.text.lower()
 
-    # Baseline comparison
-    if baseline_text and baseline_text.lower() not in response.text.lower():
-        return True
-
-    # Redirect to dashboard/home
-    if response.url and any(p in response.url for p in ["/dashboard", "/home", "/panel", "/account", "/profile"]):
+    # Redirect to a clearly authenticated area — reliable
+    if response.url and any(p in response.url.lower() for p in
+                             ["/dashboard", "/home", "/panel", "/account/overview", "/welcome", "/feed"]):
         return True
 
     # Status 302 redirect
     if response.history and response.history[-1].status_code in [301, 302]:
         return True
+
+    # Last resort: compare full response length to baseline (fragile,
+    # but far more reliable than matching a 300-char text slice).
+    # Only trust this if the difference is substantial (>15%).
+    if baseline_text is not None:
+        baseline_len  = len(baseline_text)
+        response_len  = len(response.text)
+        if baseline_len > 0:
+            diff_ratio = abs(response_len - baseline_len) / baseline_len
+            if diff_ratio > 0.15:
+                return True
 
     return False
 
