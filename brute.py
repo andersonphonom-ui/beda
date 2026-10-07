@@ -82,7 +82,7 @@ def run_brute(url, username, wordlist, user_field=None, pass_field=None,
 
         baseline = session.post(action_url, data=base_data, timeout=timeout,
                                  proxies=proxies, allow_redirects=True)
-        baseline_text = baseline.text[:300]
+        baseline_text = baseline.text
     except Exception:
         pass
 
