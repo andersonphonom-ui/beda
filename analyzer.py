@@ -216,16 +216,19 @@ def detect_rate_limit(response):
     # Body keywords
     body = response.text.lower()
     triggers = [
-        ("captcha",        "Captcha detected"),
-        ("recaptcha",      "reCAPTCHA detected"),
-        ("robot",          "Bot detection triggered"),
-        ("blocked",        "IP blocked by server"),
-        ("too many",       "Too many requests"),
-        ("rate limit",     "Rate limit hit"),
-        ("access denied",  "Access denied"),
-        ("suspicious",     "Suspicious activity detected"),
-        ("temporarily",    "Temporarily blocked"),
-        ("ban",            "IP banned"),
+        ("captcha is required",      "Captcha detected"),
+        ("please complete the captcha", "Captcha detected"),
+        ("recaptcha",                 "reCAPTCHA detected"),
+        ("are you a robot",           "Bot detection triggered"),
+        ("your ip has been blocked",  "IP blocked by server"),
+        ("your ip address has been blocked", "IP blocked by server"),
+        ("too many requests",         "Too many requests"),
+        ("rate limit exceeded",       "Rate limit hit"),
+        ("access denied",             "Access denied"),
+        ("suspicious activity detected", "Suspicious activity detected"),
+        ("temporarily blocked",       "Temporarily blocked"),
+        ("your ip has been banned",   "IP banned"),
+        ("account temporarily locked", "Account locked"),
     ]
     for keyword, message in triggers:
         if keyword in body:
