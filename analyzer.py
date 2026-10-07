@@ -29,8 +29,16 @@ def analyze_form(url, session, timeout=5):
             "action_url":  url,
         }
 
-        # ── Find form action ──
-        form = soup.find("form")
+        # ── Find the LOGIN form specifically (the one with a password field) ──
+        all_forms = soup.find_all("form")
+        form = None
+        for f in all_forms:
+            if f.find("input", {"type": "password"}):
+                form = f
+                break
+        if not form and all_forms:
+            form = all_forms[0]  # fallback: first form (e.g. multi-step email-only form)
+
         if form and form.get("action"):
             action = form.get("action")
             if action.startswith("http"):
@@ -39,9 +47,15 @@ def analyze_form(url, session, timeout=5):
                 from urllib.parse import urlparse
                 parsed = urlparse(url)
                 result["action_url"] = f"{parsed.scheme}://{parsed.netloc}{action}"
+            else:
+                # Relative action without leading slash (e.g. "doLogin")
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                base_path = parsed.path.rsplit("/", 1)[0]
+                result["action_url"] = f"{parsed.scheme}://{parsed.netloc}{base_path}/{action}"
 
-        # ── Find all inputs ──
-        inputs = soup.find_all("input")
+        # ── Find all inputs (scoped to the login form only, if found) ──
+        inputs = form.find_all("input") if form else soup.find_all("input")
 
         for inp in inputs:
             name  = inp.get("name", "").lower()
